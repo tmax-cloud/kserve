@@ -1,4 +1,4 @@
-module github.com/kserve/kserve
+module github.com/tmax-cloud/kserve
 
 go 1.18
 
