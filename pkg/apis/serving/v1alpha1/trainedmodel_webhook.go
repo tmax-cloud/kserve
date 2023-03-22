@@ -23,7 +23,7 @@ import (
 	"context"
 	
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "k8s.io/client-go/kubernetes"
     "k8s.io/client-go/tools/clientcmd"
 //    "k8s.io/client-go/util/retry"
@@ -122,59 +122,56 @@ func (tm *TrainedModel) validateTrainedModelName() error {
 
 // Trainedmodel에 명시된 isvc가 존재하는지 체크
 func (tm *TrainedModel) validateIsvcName() error {
-	if !inferenceServiceExists(tm.Spec.InferenceService, tm.Namespace) {
-		return fmt.Errorf(InvalidIsvcNameError, tm.Spec.InferenceService, tm.Name)
+	found, err := CheckServicesStartingWithIsvcName(tm.Namespace, tm.Spec.InferenceService)
+	if err != nil {
+		return fmt.Errorf("Error: %v\n", err)
 	}
+	if found {
+		return nil
+	} else {
+		return fmt.Errorf(InvalidIsvcNameError, tm.Spec.InferenceService, tm.Name)
+	}	
 	return nil
 }
 
 
-func inferenceServiceExists(name string, namespace string) bool {	
-	isvces, err := GetServicesStartingWithIsvcName(namespace, name)
-	if err != nil {
-		return false
-	} else {
-		for _, isvc := range isvces {
-			fmt.Println(isvc.GetName())
-		}
-	}
-	return true
-}
 
-func GetServicesStartingWithIsvcName(namespace string, isvcname string) ([]v1.Object, error) {
+
+func CheckServicesStartingWithIsvcName(namespace string, isvcname string) (bool, error) {
     // Load the Kubernetes configuration
 	/*
 	cfg, err := k8sconfig.GetConfig()
 	if err != nil {
 		return fmt.Errorf(err, "")
 	}
-	fmt.Errorf(cfg)
 	*/
-    config, err := clientcmd.BuildConfigFromFlags("", "~/.kube/config")
+	
+    config, err := clientcmd.BuildConfigFromFlags("", "")
     if err != nil {
-        return nil, err
+        return false, err
     }
 
     // Create a Kubernetes API clientset
     clientset, err := kubernetes.NewForConfig(config)
     if err != nil {
-        return nil, err
+        return false, err
     }
 
-    // Retrieve the list of services in the namespace
-    services, err := clientset.CoreV1().Services(namespace).List(context.Background(), v1.ListOptions{})
-    if err != nil {
-        return nil, err
-    }
+    // Get list of services in the namespace.
+	services, err := clientset.CoreV1().Services(namespace).List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return false, err
+	}
 
-    var filteredServices []v1.Object
-    for _, svc := range services.Items {
-        if strings.HasPrefix(svc.Name, isvcname) {
-            filteredServices = append(filteredServices, &svc)
-        }
-    }
+	// Check if any services start with the prefix.
+	for _, service := range services.Items {
+		if strings.HasPrefix(service.Name, isvcname) {
+			return true, nil
+		}
+	}
 
-    return filteredServices, nil
+	// No services found.
+	return false, nil
 }
 
 // Validates TrainModel's storageURI
