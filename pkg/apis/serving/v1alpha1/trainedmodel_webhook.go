@@ -19,13 +19,24 @@ package v1alpha1
 import (
 	"fmt"
 	"regexp"
-	"strings"
+	"strings"	
+	"context"
+	
 
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
+    "k8s.io/client-go/kubernetes"
+    "k8s.io/client-go/tools/clientcmd"
+//    "k8s.io/client-go/util/retry"
+//    "k8s.io/api/core/v1"
+	
 	"github.com/kserve/kserve/pkg/agent/storage"
 	"github.com/kserve/kserve/pkg/utils"
 	"k8s.io/apimachinery/pkg/runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+//	k8sconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
+
+//	v1beta1 "github.com/kserve/kserve/pkg/client/listers/serving/v1beta1"
 )
 
 // regular expressions for validation of isvc name
@@ -35,6 +46,7 @@ const (
 	InvalidTmNameFormatError            = "the Trained Model \"%s\" is invalid: a Trained Model name must consist of alphanumeric characters, '_', or '-'. (e.g. \"my-Name\" or \"abc_123\", regex used for validation is '%s')"
 	InvalidStorageUriFormatError        = "the Trained Model \"%s\" storageUri field is invalid. The storage uri must start with one of the prefixes: %s. (the storage uri given is \"%s\")"
 	InvalidTmMemoryModification         = "the Trained Model \"%s\" memory field is immutable. The memory was \"%s\" but it is updated to \"%s\""
+	InvalidIsvcNameError = "the inferenceservice \"%s\" specified in the Trained Model \"%s\" does not exist."
 )
 
 var (
@@ -90,6 +102,7 @@ func (tm *TrainedModel) validateTrainedModel() error {
 	return utils.FirstNonNilError([]error{
 		tm.validateTrainedModelName(),
 		tm.validateStorageURI(),
+		tm.validateIsvcName(),
 	})
 }
 
@@ -105,6 +118,63 @@ func (tm *TrainedModel) validateTrainedModelName() error {
 		return fmt.Errorf(InvalidTmNameFormatError, tm.Name, TmRegexp)
 	}
 	return nil
+}
+
+// Trainedmodel에 명시된 isvc가 존재하는지 체크
+func (tm *TrainedModel) validateIsvcName() error {
+	if !inferenceServiceExists(tm.Spec.InferenceService, tm.Namespace) {
+		return fmt.Errorf(InvalidIsvcNameError, tm.Spec.InferenceService, tm.Name)
+	}
+	return nil
+}
+
+
+func inferenceServiceExists(name string, namespace string) bool {	
+	isvces, err := GetServicesStartingWithIsvcName(namespace, name)
+	if err != nil {
+		return false
+	} else {
+		for _, isvc := range isvces {
+			fmt.Println(isvc.GetName())
+		}
+	}
+	return true
+}
+
+func GetServicesStartingWithIsvcName(namespace string, isvcname string) ([]v1.Object, error) {
+    // Load the Kubernetes configuration
+	/*
+	cfg, err := k8sconfig.GetConfig()
+	if err != nil {
+		return fmt.Errorf(err, "")
+	}
+	fmt.Errorf(cfg)
+	*/
+    config, err := clientcmd.BuildConfigFromFlags("", "~/.kube/config")
+    if err != nil {
+        return nil, err
+    }
+
+    // Create a Kubernetes API clientset
+    clientset, err := kubernetes.NewForConfig(config)
+    if err != nil {
+        return nil, err
+    }
+
+    // Retrieve the list of services in the namespace
+    services, err := clientset.CoreV1().Services(namespace).List(context.Background(), v1.ListOptions{})
+    if err != nil {
+        return nil, err
+    }
+
+    var filteredServices []v1.Object
+    for _, svc := range services.Items {
+        if strings.HasPrefix(svc.Name, isvcname) {
+            filteredServices = append(filteredServices, &svc)
+        }
+    }
+
+    return filteredServices, nil
 }
 
 // Validates TrainModel's storageURI
