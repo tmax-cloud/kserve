@@ -163,9 +163,10 @@ func CheckServicesStartingWithIsvcName(namespace string, isvcname string) (bool,
 		return false, err
 	}
 
+	svcname := isvcname + "-" + "predictor"
 	// Check if any services start with the prefix.
 	for _, service := range services.Items {
-		if strings.HasPrefix(service.Name, isvcname) {
+		if strings.HasPrefix(service.Name, svcname) {
 			return true, nil
 		}
 	}
