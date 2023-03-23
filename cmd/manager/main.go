@@ -90,18 +90,15 @@ func init() {
 }
 
 func main() {
-	logf.SetLogger(zap.New())
-	
 
-/*	opts := zap.Options{
+	zapopts := zap.Options{
 		Development: false,
 	}
-	opts.BindFlags(flag.CommandLine)
-	flag.Parse()
 	
+		
 
-	logf.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
-*/
+	logf.SetLogger(zap.New(zap.UseFlagOptions(&zapopts)))
+
 	log := logf.Log.WithName("entrypoint")
 
 	// Get a config to talk to the apiserver
