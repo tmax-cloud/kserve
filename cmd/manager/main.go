@@ -56,32 +56,8 @@ const (
 )
 
 // Options defines the program configurable options that may be passed on the command line.
-type Options struct {
-	metricsAddr          string
-	webhookPort          int
-	enableLeaderElection bool
-}
 
-// DefaultOptions returns the default values for the program options.
-func DefaultOptions() Options {
-	return Options{
-		metricsAddr:          ":8080",
-		webhookPort:          9443,
-		enableLeaderElection: false,
-	}
-}
 
-// GetOptions parses the program flags and returns them as Options.
-func GetOptions() Options {
-	opts := DefaultOptions()
-	flag.StringVar(&opts.metricsAddr, "metrics-addr", opts.metricsAddr, "The address the metric endpoint binds to.")
-	flag.IntVar(&opts.webhookPort, "webhook-port", opts.webhookPort, "The port that the webhook server binds to.")
-	flag.BoolVar(&opts.enableLeaderElection, "leader-elect", opts.enableLeaderElection,
-		"Enable leader election for kserve controller manager. "+
-			"Enabling this will ensure there is only one active kserve controller manager.")
-	flag.Parse()
-	return opts
-}
 
 func init() {
 	// Allow unknown fields in Istio API client for backwards compatibility if cluster has existing vs with deprecated fields.
@@ -91,15 +67,30 @@ func init() {
 
 func main() {
 
-	zapopts := zap.Options{
+	
+
+	var metricsAddr string
+	var webhookPort int
+	var enableLeaderElection bool
+	
+	
+	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
+	flag.IntVar(&webhookPort, "webhook-port", 9443, "The port number to be used for admission webhook server.")
+	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for kserve controller manager.")
+		
+	log := logf.Log.WithName("entrypoint")
+		
+	opts := zap.Options{
 		Development: false,
 	}
 	
-		
+	opts.BindFlags(flag.CommandLine)
 
-	logf.SetLogger(zap.New(zap.UseFlagOptions(&zapopts)))
+	flag.Parse()
 
-	log := logf.Log.WithName("entrypoint")
+	logf.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	
 
 	// Get a config to talk to the apiserver
 	log.Info("Setting up client for manager")
@@ -111,12 +102,12 @@ func main() {
 
 	// Create a new Cmd to provide shared dependencies and start components
 	log.Info("Setting up manager")
-	options := GetOptions()
+	
 	mgr, err := manager.New(cfg, manager.Options{
-		MetricsBindAddress: options.metricsAddr,
-		Port:               options.webhookPort,
-		LeaderElection:     options.enableLeaderElection,
-		LeaderElectionID:   LeaderLockName,
+		MetricsBindAddress: metricsAddr,
+		Port:               webhookPort,
+		LeaderElection:     enableLeaderElection,
+		LeaderElectionID:   LeaderLockName,		
 	})
 	if err != nil {
 		log.Error(err, "unable to set up overall controller manager")
