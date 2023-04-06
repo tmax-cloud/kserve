@@ -20,7 +20,11 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"context"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "k8s.io/client-go/kubernetes"
+    "k8s.io/client-go/tools/clientcmd"
 	"github.com/kserve/kserve/pkg/agent/storage"
 	"github.com/kserve/kserve/pkg/utils"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -35,6 +39,7 @@ const (
 	InvalidTmNameFormatError            = "the Trained Model \"%s\" is invalid: a Trained Model name must consist of alphanumeric characters, '_', or '-'. (e.g. \"my-Name\" or \"abc_123\", regex used for validation is '%s')"
 	InvalidStorageUriFormatError        = "the Trained Model \"%s\" storageUri field is invalid. The storage uri must start with one of the prefixes: %s. (the storage uri given is \"%s\")"
 	InvalidTmMemoryModification         = "the Trained Model \"%s\" memory field is immutable. The memory was \"%s\" but it is updated to \"%s\""
+	InvalidIsvcNameError = "the inferenceservice \"%s\" specified in the Trained Model \"%s\" does not exist."
 )
 
 var (
@@ -90,6 +95,7 @@ func (tm *TrainedModel) validateTrainedModel() error {
 	return utils.FirstNonNilError([]error{
 		tm.validateTrainedModelName(),
 		tm.validateStorageURI(),
+		tm.validateIsvcName(),
 	})
 }
 
@@ -105,6 +111,61 @@ func (tm *TrainedModel) validateTrainedModelName() error {
 		return fmt.Errorf(InvalidTmNameFormatError, tm.Name, TmRegexp)
 	}
 	return nil
+}
+
+// Trainedmodel에 명시된 isvc가 존재하는지 체크
+func (tm *TrainedModel) validateIsvcName() error {
+	found, err := CheckServicesStartingWithIsvcName(tm.Namespace, tm.Spec.InferenceService)
+	if err != nil {
+		return fmt.Errorf("Error: %v\n", err)
+	}
+	if found {
+		return nil
+	} else {
+		return fmt.Errorf(InvalidIsvcNameError, tm.Spec.InferenceService, tm.Name)
+	}	
+	return nil
+}
+
+
+
+
+func CheckServicesStartingWithIsvcName(namespace string, isvcname string) (bool, error) {
+    // Load the Kubernetes configuration
+	/*
+	cfg, err := k8sconfig.GetConfig()
+	if err != nil {
+		return fmt.Errorf(err, "")
+	}
+	*/
+	
+    config, err := clientcmd.BuildConfigFromFlags("", "")
+    if err != nil {
+        return false, err
+    }
+
+    // Create a Kubernetes API clientset
+    clientset, err := kubernetes.NewForConfig(config)
+    if err != nil {
+        return false, err
+    }
+
+    // Get list of services in the namespace.
+	services, err := clientset.CoreV1().Services(namespace).List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return false, err
+	}
+
+	svcname := isvcname + "-" + "predictor"
+	// Check if any services start with the prefix.
+	for _, service := range services.Items {
+		if strings.HasPrefix(service.Name, svcname) {
+			return true, nil
+		}
+	}
+
+	// No services found.
+	return false, nil
 }
 
 // Validates TrainModel's storageURI
